@@ -6,7 +6,7 @@
     <meta content='width=device-width; height=device-height; initial-scale=1.0; maximum-scale=1.0; user-scalable=0;' name='viewport' />
     <meta name="viewport" content="width=device-width" />
     <meta name="license" content="
-        Copyright 2013 Abram Hindle
+        Copyright 2013 Abram Hindle & Guanqi Huang
         
         Licensed under the Apache License, Version 2.0 (the "License");
         you may not use this file except in compliance with the License.
@@ -25,21 +25,36 @@
   <body bgcolor="black" height="100%" width="100%"> 
     <canvas id="c" width="100%" height="100%" style="-webkit-tap-highlight-color: transparent;"></canvas> 
     <script>
+
+//var id = "L"+Math.floor(20000000*Math.random());
 var canvas = document.getElementById('c');
 var host = window.location.host;
 var context = canvas.getContext("2d");
 var W = canvas.width  = window.innerWidth-6;
 var H = canvas.height = window.innerHeight-50;
-
+var radius = 10;
+var increase = true;
 
 function sendJSONXMLHTTPRequest(url, objects, callback) {
     var xhr = new XMLHttpRequest();
+
+    xhr.open(objects["method"]||'GET',url);
+
+    if(objects["content-type"]){
+        xhr.overrideMimeType(objects["content-type"]);
+    }
+
+    if(objects["accept"]){
+        xhr.setRequestHeader('Accept',objects["accept"]);
+    }
+
     xhr.onreadystatechange = function () {
         if (xhr.readyState==4) {
             try {
                 if (xhr.status==200) {
                     //XXX: parse some JSON from the request!
                     //XXX: Pass the data to the callback!
+		    callback(JSON.parse(xhr.responseText));
                 }
             } 
             catch(e) {
@@ -50,10 +65,24 @@ function sendJSONXMLHTTPRequest(url, objects, callback) {
     //XXX: POST to a URL
     //XXX: set the mimetype and the accept headers!
     // Remember to use application/json !
+    xhr.send(objects["body"] || null);
 }
 
+function modifyWorld(entity,data){
+    sendJSONXMLHTTPRequest("http://"+host+"/entity/"+entity,
+    {"method":"PUT","content-type":"application/json","body":JSON.stringify(data)},
+    function(objs){
+       //nothing 
+    });
+}
 
 world = {};
+
+function updateWorld(objs){
+    for(var key in objs){
+        world[key] = objs[key];
+    }
+}
 
 //XXX: TODO Make this prettier!
 function drawCircle(context,entity) {
@@ -64,15 +93,24 @@ function drawCircle(context,entity) {
         var y = entity["y"];
         //moveTo(x,y);
         fillStyle = entity["colour"];
-        strokeStyle = fillStyle;
+        strokeStyle = colorGenerator();
         arc(x, y, (entity["radius"])?entity["radius"]:50, 0, 2.0 * Math.PI, false);  
         stroke();                                
     }
 }
 
+function colorGenerator() {
+    var letters = '0123456789ABCDEF'.split('');
+    var color = '#';
+    for (var i = 0; i < 6; i++ ) {
+        color += letters[Math.round(Math.random() * 15)];
+    }
+    return color;
+}
+
 function prepEntity(entity) {
     if (!entity["colour"]) {
-        entity["colour"] = "#FF0000";
+        entity["colour"] = colorGenerator();
     }
     if (!entity["radius"]) {
         entity["radius"] = 50;
@@ -138,13 +176,14 @@ function addEntity(entity, data) {
     world[entity] = data;
     drawNextFrame(); // (but should we?)
     //XXX: Send a XHTML Request that updates the entity you just  modified!
-
+    modifyWorld(entity,data);
 }
 
 var counter = 0;
 function addEntityWithoutName(data) {
     //var name = "X"+Math.floor((Math.random()*100)+1);
-    var name = "X"+(counter++)%100;
+    //var name = id+(counter++)%100;
+    var name = "L"+Math.floor(10000000000*Math.random());
     addEntity(name,data);
 }
 
@@ -186,7 +225,7 @@ mouse = (function() {
                 var y = pos[1];
 	        self.clicked = 1;
                 self.callListeners(self.mousedowners,x,y,self.clicked,e);
-                //addEntityWithoutName({'x':x,'y':y,'colour':'red'});
+                addEntityWithoutName({'x':x,'y':y,'colour':colorGenerator()});
             }
         },
         mouseup: function(e) {
@@ -200,7 +239,7 @@ mouse = (function() {
 	        self.clicked = 0;
                 self.selected = -1;
                 self.callListeners(self.mouseuppers,x,y,self.clicked,e);
-                //addEntityWithoutName({'x':x,'y':y,'colour':'blue'});
+                addEntityWithoutName({'x':x,'y':y,'colour':colorGenerator()});
             }
         },
         touchstart: function(e) {
@@ -245,24 +284,53 @@ mouse = (function() {
 })();
 
 // Add the application specific mouse listeners!
-//XXX: TODO Make these prettier!
+//XXX: Make these prettier!
 mouse.mousedowners.push(function(x,y,clicked,e) {
-    addEntityWithoutName({'x':x,'y':y,'colour':'blue'});
+    addEntityWithoutName({'x':x,'y':y,'colour':radiusChanger()});
 });
 
 mouse.mouseuppers.push(function(x,y,clicked,e) {
-    addEntityWithoutName({'x':x,'y':y,'colour':'red'});
+    addEntityWithoutName({'x':x,'y':y,'colour':radiusChanger()});
 });
 
 mouse.mousedraggers.push(function(x,y,clicked,e) {
-    addEntityWithoutName({'x':x,'y':y,'colour':'green',
-                          'radius':10});
+    var rad = (Math.floor(10000000000*Math.random()))%3;
+    addEntityWithoutName({'x':x,'y':y,'colour':radiusChanger(),'radius':radiusChanger()});
 });
 
+function radiusChanger() {
+	if (radius==50)
+		increase = false;
+	if (radius==10)
+		increase = true;
+
+	if (radius >= 10 && radius <50 && increase)
+		radius+=2;
+	else if (radius >10 && !increase && radius <=50)
+		radius-=2;
+
+return radius;
+	
+}
+
+function checkUpdate(){
+    sendJSONXMLHTTPRequest("http://"+host+"/world",{
+            "method":"GET",
+            "content-type":"application/json",
+            "accept":"application/json"},
+            function(objs){
+                if(objs){
+                   updateWorld(objs);    
+                }
+            }
+    );
+}
 
 function update() {
-    //XXX: TODO Get the world from the webservice using a XMLHTTPRequest
+    //XXX: Get the world from the webservice using a XMLHTTPRequest
+    checkUpdate();
     drawFrame();
+    drawNextFrame();
 }
 
 // 30 frames per second
